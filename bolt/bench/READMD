@@ -1,0 +1,2 @@
+export GOPATH=/home/anqin/Documents/workspace/trash
+go get github.com/boltdb/bolt
