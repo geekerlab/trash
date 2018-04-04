@@ -1,3 +1,6 @@
+// Copyright for Authors,
+//  An Qin (anqin.qin@gmail.com)
+
 package main
 
 import(
