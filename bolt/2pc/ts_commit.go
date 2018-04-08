@@ -14,6 +14,10 @@ import (
 
 
 func run_bench() {
+    if len(os.Args) < 4 {
+        fmt.Println("missing arguments! need 4 args")
+        return
+    }
     concurrency, _ := strconv.Atoi(os.Args[1])
     tasks, _ := strconv.Atoi(os.Args[2])
     disks, _ := strconv.Atoi(os.Args[3])
@@ -182,15 +186,18 @@ func Bytes(n int) []byte {
     return d
 }
 
-func table(column []string, db *bolt.DB) error {
-    for c := range column {
+func table(columns []string, db *bolt.DB) error {
+    for _, c := range columns {
         fmt.Println(c)
     }
     return nil    
 }
 
 func main() {
-
-    run_bench()
+    var columns = []string{"c1", "c2"}
+    var db *bolt.DB
+    if err := table(columns, db); err != nil {
+        fmt.Println("somting is wrong")
+    }
 }
 
