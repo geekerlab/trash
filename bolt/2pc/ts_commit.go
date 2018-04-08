@@ -13,7 +13,7 @@ import (
 )
 
 
-func main() {
+func run_bench() {
     concurrency, _ := strconv.Atoi(os.Args[1])
     tasks, _ := strconv.Atoi(os.Args[2])
     disks, _ := strconv.Atoi(os.Args[3])
@@ -147,6 +147,7 @@ func listDBPaths(begin rune, disks int, partitions int) []string {
     }
     return dbs
 }
+
 func populateData(num int, srcs []src, dbs []*bolt.DB) [][]string {
     keys := make([][]string, len(dbs))
     for i, db := range dbs {
@@ -169,12 +170,27 @@ func populateData(num int, srcs []src, dbs []*bolt.DB) [][]string {
     }
     return keys
 }
+
 func checksum(data []byte) string {
     checksum := md5.Sum(data)
     return hex.EncodeToString(checksum[:])
 }
+
 func Bytes(n int) []byte {
     d := make([]byte, n)
     rand.Read(d)
     return d
 }
+
+func table(column []string, db *bolt.DB) error {
+    for c := range column {
+        fmt.Println(c)
+    }
+    return nil    
+}
+
+func main() {
+
+    run_bench()
+}
+
