@@ -151,7 +151,14 @@ func (t *Table) PrintRow(key string) (error) {
         for column, _ := range t.schema_.columns {
             internal_key := key + "/" + column
             fmt.Printf("read: %s --> ", internal_key)
-            fmt.Printf("{%s: %s}\n", column, b.Get([]byte(internal_key)))
+            value := b.Get([]byte(internal_key))
+            if string(value) != _FLAG_DELETE {
+                if string(value) != "" {
+                    fmt.Printf("{%s: %s}\n", column, value)
+                }
+            } else {
+                fmt.Printf("deleted\n")
+            }
         }
         return nil
     }); err == nil {
@@ -186,4 +193,5 @@ func main() {
     }
 
     table.PrintRow("k1")
+    table.PrintRow("k2")
 }
