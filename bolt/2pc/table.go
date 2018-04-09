@@ -26,10 +26,12 @@ type TableSchema struct {
 type RowMutation struct {
     pairs map[string]string
     num int
+
+    schema *TableSchema
 }
 
 type Table struct {
-    schema_ TableSchema
+    schema_ *TableSchema
     path_  string
 
     rwlock_  sync.Mutex
@@ -68,13 +70,30 @@ func (s *TableSchema) NumColumns() int {
     return len(list)
 }
 
-func (m *RowMutation) Write(key, value string) {
-    m.pairs[key] = value
+func (m *RowMutation) Write(key, column, value string) bool {
+    if !m.schema.IsColumn(column) {
+        return false
+    }
+    m.pairs[key + "/" + column] = value
+    return true
 }
 
-func (m *RowMutation) Delete(key string) {
-    m.pairs[key] = _FLAG_DELETE
+func (m *RowMutation) Delete(key, column string) bool {
+    if !m.schema.IsColumn(column) {
+        return false
+    }
+
+    m.pairs[key + "/" + column] = _FLAG_DELETE
+    return true
 }
+
+func (m *RowMutation) DeleteRow(key string) bool {
+    for c:= range m.schema.columns {
+      m.pairs[key + "/" + c] = _FLAG_DELETE
+    }
+    return true
+}
+
 
 func OpenTable(path string, table_schema *TableSchema) (*Table, error) {
     if table_schema.NumColumns() == 0 {
@@ -87,17 +106,19 @@ func OpenTable(path string, table_schema *TableSchema) (*Table, error) {
         return nil, err
     }
     table.db_ = db
+    table.schema_ = table_schema
     return table, nil
 }
 
-func (t *Table) NewRowMutation(key string) (*RowMutation, error) {
+func (t *Table) NewRowMutation() (*RowMutation, error) {
     log.Printf("NewRowMutation")
     mutation := new(RowMutation)
     mutation.pairs = make(map[string]string)
+    mutation.schema = t.schema_
     return mutation, nil
 }
 
-func (t *Table) UpdateMutation(key string, mutation *RowMutation) error {
+func (t *Table) UpdateMutation(mutation *RowMutation) error {
     log.Printf("UpdateMutation")
     t.db_.Update(func(tx *bolt.Tx) error {
         _, err := tx.CreateBucketIfNotExists([]byte("iqiyi"))
@@ -108,8 +129,12 @@ func (t *Table) UpdateMutation(key string, mutation *RowMutation) error {
     })
     for c, v := range mutation.pairs {
         if err := t.db_.Update(func(tx *bolt.Tx) error {
+            log.Printf("UpdateMutation: IN TX:{%s,%s}", c, v)
             b := tx.Bucket([]byte("iqiyi"))
-            err := b.Put([]byte(key + "/" + c), []byte(v))
+            err := b.Put([]byte(c), []byte(v))
+            if err != nil {
+                log.Printf("wrong")
+            }
             return err
         }); err == nil {
 
@@ -121,10 +146,12 @@ func (t *Table) UpdateMutation(key string, mutation *RowMutation) error {
 func (t *Table) PrintRow(key string) (error) {
     log.Printf("PrintRow")
     if err := t.db_.View(func(tx *bolt.Tx) error {
+        log.Printf("In TX")
         b := tx.Bucket([]byte("iqiyi"))
-        for column := range t.schema_.columns {
+        for column, _ := range t.schema_.columns {
             internal_key := key + "/" + column
-            fmt.Printf("{%s: %s}", column, b.Get([]byte(internal_key)))
+            fmt.Printf("read: %s --> ", internal_key)
+            fmt.Printf("{%s: %s}\n", column, b.Get([]byte(internal_key)))
         }
         return nil
     }); err == nil {
@@ -145,18 +172,18 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    key := "my_key"
-    mutation, err := table.NewRowMutation(key)
-    mutation.Write("k1", "v1")
-    mutation.Write("k2", "v2")
-    mutation.Delete("k1")
+
+    mutation, err := table.NewRowMutation()
+    mutation.Write("k1", "c1", "v1")
+    mutation.Write("k2", "c2", "v2")
+    mutation.DeleteRow("k1")
     if err != nil {
         log.Fatal(err)
     }
 
-    if err := table.UpdateMutation(key, mutation); err != nil {
+    if err := table.UpdateMutation(mutation); err != nil {
         log.Fatal(err)
     }
 
-    table.PrintRow(key)
+    table.PrintRow("k1")
 }
