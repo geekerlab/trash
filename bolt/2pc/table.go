@@ -36,6 +36,8 @@ type Table struct {
 
     rwlock_  sync.Mutex
     db_ *bolt.DB
+
+    compact_channel_ chan bool
 }
 
 func (s *TableSchema) AddColumn(column string) error {
@@ -121,7 +123,7 @@ func (t *Table) NewRowMutation() (*RowMutation, error) {
 func (t *Table) UpdateMutation(mutation *RowMutation) error {
     log.Printf("UpdateMutation")
     t.db_.Update(func(tx *bolt.Tx) error {
-        _, err := tx.CreateBucketIfNotExists([]byte("iqiyi"))
+        _, err := tx.CreateBucketIfNotExists([]byte("mybucket"))
         if err != nil {
             return err
         }
@@ -130,7 +132,7 @@ func (t *Table) UpdateMutation(mutation *RowMutation) error {
     for c, v := range mutation.pairs {
         if err := t.db_.Update(func(tx *bolt.Tx) error {
             log.Printf("UpdateMutation: IN TX:{%s,%s}", c, v)
-            b := tx.Bucket([]byte("iqiyi"))
+            b := tx.Bucket([]byte("mybucket"))
             err := b.Put([]byte(c), []byte(v))
             if err != nil {
                 log.Printf("wrong")
@@ -147,15 +149,16 @@ func (t *Table) PrintRow(key string) (error) {
     log.Printf("PrintRow")
     if err := t.db_.View(func(tx *bolt.Tx) error {
         log.Printf("In TX")
-        b := tx.Bucket([]byte("iqiyi"))
+        b := tx.Bucket([]byte("mybucket"))
         for column, _ := range t.schema_.columns {
             internal_key := key + "/" + column
             fmt.Printf("read: %s --> ", internal_key)
             value := b.Get([]byte(internal_key))
             if string(value) != _FLAG_DELETE {
                 if string(value) != "" {
-                    fmt.Printf("{%s: %s}\n", column, value)
+                    fmt.Printf("{%s: %s}", column, value)
                 }
+                fmt.Printf("\n")
             } else {
                 fmt.Printf("deleted\n")
             }
@@ -166,6 +169,41 @@ func (t *Table) PrintRow(key string) (error) {
     }
     return nil
 }
+
+func (t *Table) CompactionTask() {
+    log.Printf("CompactionTask")
+}
+
+func (t *Table) StartCompaction() bool {
+    t.compact_channel_ = t.ScheduleTimer(t.CompactionTask, 5*time.Millisecond)
+    return t.compact_channel_ != nil
+}
+
+func (t *Table) StopCompaction() {
+    if t.compact_channel_ != nil {
+        t.compact_channel_ <- true
+    }
+    t.compact_channel_ = nil
+}
+
+func (t *Table) ScheduleTimer(what func(), delay time.Duration) chan bool {
+    stop := make(chan bool)
+
+    go func() {
+        for {
+            what()
+            select {
+            case <-time.After(delay):
+            case <-stop:
+                return
+            }
+        }
+    }()
+
+    return stop
+}
+
+
 
 func main() {
     schema := new(TableSchema)
@@ -191,6 +229,12 @@ func main() {
     if err := table.UpdateMutation(mutation); err != nil {
         log.Fatal(err)
     }
+
+    table.PrintRow("k1")
+    table.PrintRow("k2")
+    table.StartCompaction()
+    defer table.StopCompaction()
+    time.Sleep(50 * time.Millisecond)
 
     table.PrintRow("k1")
     table.PrintRow("k2")
