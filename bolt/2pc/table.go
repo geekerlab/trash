@@ -122,6 +122,10 @@ func (t *Table) NewRowMutation() (*RowMutation, error) {
 
 func (t *Table) UpdateMutation(mutation *RowMutation) error {
     log.Printf("UpdateMutation")
+    t.rwlock_.Lock()
+    defer t.rwlock_.Unlock()
+    
+
     t.db_.Update(func(tx *bolt.Tx) error {
         _, err := tx.CreateBucketIfNotExists([]byte("mybucket"))
         if err != nil {
@@ -147,6 +151,8 @@ func (t *Table) UpdateMutation(mutation *RowMutation) error {
 
 func (t *Table) PrintRow(key string) (error) {
     log.Printf("PrintRow")
+    t.rwlock_.Lock()
+    defer t.rwlock_.Unlock()
     if err := t.db_.View(func(tx *bolt.Tx) error {
         log.Printf("In TX")
         b := tx.Bucket([]byte("mybucket"))
@@ -172,10 +178,41 @@ func (t *Table) PrintRow(key string) (error) {
 
 func (t *Table) CompactionTask() {
     log.Printf("CompactionTask")
+
+    t.rwlock_.Lock()
+    defer t.rwlock_.Unlock()
+    
+    tx, err := t.db_.Begin(false)
+    if err != nil {
+        log.Fatal("fatal: open db iterator")
+        return
+    }
+    deleted_keys := []string{}
+    c := tx.Bucket([]byte("mybucket")).Cursor()
+    for k, v := c.First(); k != nil; k, v = c.Next() {
+        log.Printf("compact:(%s: %s)\n", k, v)
+        if string(v) == _FLAG_DELETE {
+            deleted_keys = append(deleted_keys, string(k))
+        }
+    }
+    for _, key := range deleted_keys {
+        log.Printf("deleted: %s\n", key) 
+        if err := t.db_.Update(func(tx *bolt.Tx) error {
+//            b := tx.Bucket([]byte("mybucket"))
+//            err := b.Delete([]byte(key))
+//            if err != nil {
+//                log.Printf("wrong")
+//            }
+            return err
+        }); err == nil {
+
+        }
+    
+    }
 }
 
 func (t *Table) StartCompaction() bool {
-    t.compact_channel_ = t.ScheduleTimer(t.CompactionTask, 5*time.Millisecond)
+    t.compact_channel_ = t.ScheduleTimer(t.CompactionTask, 15*time.Millisecond)
     return t.compact_channel_ != nil
 }
 
